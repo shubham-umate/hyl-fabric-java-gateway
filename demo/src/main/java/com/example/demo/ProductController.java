@@ -18,6 +18,7 @@ import org.hyperledger.fabric.sdk.Enrollment;
 import org.hyperledger.fabric.sdk.User;
 import org.hyperledger.fabric.sdk.security.CryptoSuite;
 import org.hyperledger.fabric.sdk.security.CryptoSuiteFactory;
+import org.hyperledger.fabric_ca.sdk.Attribute;
 import org.hyperledger.fabric_ca.sdk.EnrollmentRequest;
 import org.hyperledger.fabric_ca.sdk.HFCAClient;
 import org.hyperledger.fabric_ca.sdk.RegistrationRequest;
@@ -61,7 +62,7 @@ public class ProductController {
 	}
 
 	@GetMapping("/registerUser")
-	public String registerUser() throws Exception {
+	public String registerUser(@RequestParam String userName) throws Exception {
 		Properties props = new Properties();
 		props.put("pemFile", "ca.org1.example.com-cert.pem");
 		props.put("allowAllHostNames", "true");
@@ -73,9 +74,9 @@ public class ProductController {
 		Wallet wallet = Wallets.newFileSystemWallet(Paths.get("wallet"));
 
 		// Check to see if we've already enrolled the user.
-		if (wallet.get("appUser") != null) {
-			System.out.println("An identity for the user \"appUser\" already exists in the wallet");
-			return "An identity for the user \\\"appUser\\\" already exists in the wallet";
+		if (wallet.get(userName) != null) {
+			System.out.println("An identity for the user "+userName+" already exists in the wallet");
+			return "An identity for the user "+userName+" already exists in the wallet";
 		}
 
 		X509Identity adminIdentity = (X509Identity) wallet.get("admin");
@@ -85,6 +86,8 @@ public class ProductController {
 		}
 		User admin = new User() {
 
+			
+			
 			@Override
 			public String getName() {
 				return "admin";
@@ -104,6 +107,8 @@ public class ProductController {
 			public String getAffiliation() {
 				return "org1.department1";
 			}
+			
+			
 
 			@Override
 			public Enrollment getEnrollment() {
@@ -118,6 +123,7 @@ public class ProductController {
 					public String getCert() {
 						return Identities.toPemString(adminIdentity.getCertificate());
 					}
+				
 				};
 			}
 
@@ -130,26 +136,32 @@ public class ProductController {
 
 		// Register the user, enroll the user, and import the new identity into the
 		// wallet.
-		RegistrationRequest registrationRequest = new RegistrationRequest("appUser");
+		RegistrationRequest registrationRequest = new RegistrationRequest(userName);
 		registrationRequest.setAffiliation("org1.department1");
-		registrationRequest.setEnrollmentID("appUser");
+		registrationRequest.setEnrollmentID(userName);
+		
+		
+		Attribute attr = new Attribute("role","user",true);
+		registrationRequest.addAttribute(attr);
+		
+		
 		String enrollmentSecret = caClient.register(registrationRequest, admin);
-		Enrollment enrollment = caClient.enroll("appUser", enrollmentSecret);
+		Enrollment enrollment = caClient.enroll(userName, enrollmentSecret);
 		Identity user = Identities.newX509Identity("Org1MSP", enrollment);
-		wallet.put("appUser", user);
-		System.out.println("Successfully enrolled user \"appUser\" and imported it into the wallet");
-		return "Successfully enrolled user \"appUser\" and imported it into the wallet";
+		wallet.put(userName, user);
+		System.out.println("Successfully enrolled user "+userName+" and imported it into the wallet");
+		return "Successfully enrolled user "+userName+" and imported it into the wallet";
 	}
 
 	@GetMapping("/initLedger")
-	public String initLedger() throws Exception {
+	public String initLedger(@RequestParam String userName) throws Exception {
 		Path walletPath = Paths.get("wallet");
 		Wallet wallet = Wallets.newFileSystemWallet(walletPath);
 		// load a CCP
 		Path networkConfigPath = Paths.get("connection-org1.yaml");
 
 		Gateway.Builder builder = Gateway.createBuilder();
-		builder.identity(wallet, "appUser").networkConfig(networkConfigPath).discovery(true);
+		builder.identity(wallet, userName).networkConfig(networkConfigPath).discovery(true);
 
 		// create a gateway connection
 		try (Gateway gateway = builder.connect()) {
@@ -180,14 +192,14 @@ public class ProductController {
 	}
 
 	@GetMapping("/getProducts")
-	public String getAsset() throws Exception {
+	public String getAllProducts(@RequestParam String userName) throws Exception {
 		Path walletPath = Paths.get("wallet");
 		Wallet wallet = Wallets.newFileSystemWallet(walletPath);
 		// load a CCP
 		Path networkConfigPath = Paths.get("connection-org1.yaml");
 
 		Gateway.Builder builder = Gateway.createBuilder();
-		builder.identity(wallet, "appUser").networkConfig(networkConfigPath).discovery(true);
+		builder.identity(wallet, userName).networkConfig(networkConfigPath).discovery(true);
 
 		// create a gateway connection
 		try (Gateway gateway = builder.connect()) {
@@ -208,14 +220,14 @@ public class ProductController {
 	}
 
 	@PostMapping("/createProduct")
-	public String createProduct(@RequestBody Product product) throws Exception{
+	public String createProduct(@RequestBody Product product,@RequestParam String userName) throws Exception{
 		Path walletPath = Paths.get("wallet");
 		Wallet wallet = Wallets.newFileSystemWallet(walletPath);
 		// load a CCP
 		Path networkConfigPath = Paths.get("connection-org1.yaml");
 
 		Gateway.Builder builder = Gateway.createBuilder();
-		builder.identity(wallet, "appUser").networkConfig(networkConfigPath).discovery(true);
+		builder.identity(wallet, userName).networkConfig(networkConfigPath).discovery(true);
 
 		// create a gateway connection
 		try (Gateway gateway = builder.connect()) {
@@ -231,14 +243,14 @@ public class ProductController {
 	}
 	
 	@GetMapping("/viewProduct")
-	public String viewProduct(@RequestParam String productId) throws Exception{
+	public String viewProduct(@RequestParam String productId,@RequestParam String userName) throws Exception{
 		Path walletPath = Paths.get("wallet");
 		Wallet wallet = Wallets.newFileSystemWallet(walletPath);
 		// load a CCP
 		Path networkConfigPath = Paths.get("connection-org1.yaml");
 
 		Gateway.Builder builder = Gateway.createBuilder();
-		builder.identity(wallet, "appUser").networkConfig(networkConfigPath).discovery(true);
+		builder.identity(wallet, userName).networkConfig(networkConfigPath).discovery(true);
 
 		// create a gateway connection
 		try (Gateway gateway = builder.connect()) {
@@ -248,20 +260,20 @@ public class ProductController {
 			Contract contract = network.getContract("productcc");
 			byte[] result;
 
-			result = contract.submitTransaction("ReadProduct",productId);
+			result = contract.evaluateTransaction("ReadProduct",productId);
 			return  new String(result);
 		}
 	}
 	
 	@DeleteMapping("/deleteProduct")
-	public String deleteProduct(@RequestParam String productId) throws Exception{
+	public String deleteProduct(@RequestParam String productId,@RequestParam String userName) throws Exception{
 		Path walletPath = Paths.get("wallet");
 		Wallet wallet = Wallets.newFileSystemWallet(walletPath);
 		// load a CCP
 		Path networkConfigPath = Paths.get("connection-org1.yaml");
 
 		Gateway.Builder builder = Gateway.createBuilder();
-		builder.identity(wallet, "appUser").networkConfig(networkConfigPath).discovery(true);
+		builder.identity(wallet, userName).networkConfig(networkConfigPath).discovery(true);
 
 		// create a gateway connection
 		try (Gateway gateway = builder.connect()) {
@@ -270,21 +282,22 @@ public class ProductController {
 			Network network = gateway.getNetwork("mychannel");
 			Contract contract = network.getContract("productcc");
 			byte[] result;
-
+			
 			result = contract.submitTransaction("DeleteProduct",productId);
+			
 			return  new String(result);
 		}
 	}
 	
 	@DeleteMapping("/deleteProducts")
-	public String deleteProducts() throws Exception{
+	public String deleteProducts(@RequestParam String userName) throws Exception{
 		Path walletPath = Paths.get("wallet");
 		Wallet wallet = Wallets.newFileSystemWallet(walletPath);
 		// load a CCP
 		Path networkConfigPath = Paths.get("connection-org1.yaml");
 
 		Gateway.Builder builder = Gateway.createBuilder();
-		builder.identity(wallet, "appUser").networkConfig(networkConfigPath).discovery(true);
+		builder.identity(wallet, userName).networkConfig(networkConfigPath).discovery(true);
 
 		// create a gateway connection
 		try (Gateway gateway = builder.connect()) {
